@@ -1,255 +1,323 @@
-# 🛍️ Black Friday Sales Prediction - Time-Based Forecasting
+# 🖤 Black Friday Prediction - Sales Forecasting
 
-A **machine learning project predicting customer purchase amounts** during Black Friday using historical transaction data and customer behavior patterns.
+An **end-to-end machine learning system** for predicting Black Friday purchase amounts using customer and product features.
 
 ## 🎯 Overview
 
-This project provides:
-- ✅ Time-based data splitting
+This project covers:
 - ✅ Customer segmentation
-- ✅ Product category analysis
-- ✅ Regression models for sales prediction
-- ✅ Feature importance analysis
-- ✅ Seasonal pattern detection
+- ✅ Feature engineering
+- ✅ Regression models
+- ✅ Price elasticity
+- ✅ Sales forecasting
+- ✅ Business insights
+- ✅ Campaign optimization
 
-## 📊 Dataset Structure
+## 👥 Customer Data Analysis
 
 ```python
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 
-class BlackFridayDataLoader:
-    """Load and explore Black Friday data"""
+class CustomerAnalyzer:
+    """Analyze customer behavior"""
     
-    def __init__(self, filepath='BlackFriday.csv'):
-        self.df = pd.read_csv(filepath)
+    def __init__(self):
+        self.data = None
     
-    def dataset_overview(self):
-        """Dataset summary"""
-        print(f"Shape: {self.df.shape}")
-        print(f"\nColumns: {self.df.columns.tolist()}")
-        print(f"\nData types:\n{self.df.dtypes}")
-        print(f"\nMissing values:\n{self.df.isnull().sum()}")
-        print(f"\nBasic statistics:\n{self.df.describe()}")
+    def load_customer_data(self, filepath):
+        """Load Black Friday data"""
+        self.data = pd.read_csv(filepath)
+        print(f"Dataset shape: {self.data.shape}")
+        return self.data
     
-    def customer_analysis(self):
-        """Analyze customer demographics"""
-        print(f"Total customers: {self.df['User_ID'].nunique()}")
-        print(f"Gender distribution:\n{self.df['Gender'].value_counts()}")
-        print(f"Age distribution:\n{self.df['Age'].value_counts().sort_index()}")
-        print(f"City category:\n{self.df['City_Category'].value_counts()}")
+    def segment_customers(self):
+        """Customer segmentation"""
+        df = self.data.copy()
+        
+        # Purchase frequency
+        purchase_freq = df.groupby('customer_id').size()
+        df['purchase_frequency'] = df['customer_id'].map(purchase_freq)
+        
+        # Average purchase value
+        avg_purchase = df.groupby('customer_id')['purchase_amount'].mean()
+        df['avg_purchase_value'] = df['customer_id'].map(avg_purchase)
+        
+        # Customer lifetime value proxy
+        df['customer_lifetime_value'] = df.groupby('customer_id')['purchase_amount'].transform('sum')
+        
+        # Segment by value
+        df['customer_segment'] = pd.qcut(
+            df['customer_lifetime_value'],
+            q=4,
+            labels=['low_value', 'medium_value', 'high_value', 'premium']
+        )
+        
+        return df
     
-    def product_analysis(self):
-        """Analyze products"""
-        print(f"Total products: {self.df['Product_ID'].nunique()}")
-        print(f"Product categories:\n{self.df['Product_Category_1'].value_counts()}")
-        print(f"Average price by category:")
-        print(self.df.groupby('Product_Category_1')['Purchase'].mean().sort_values(ascending=False))
+    def analyze_demographics(self):
+        """Analyze demographic patterns"""
+        df = self.data.copy()
+        
+        # Age groups
+        df['age_group'] = pd.cut(df['age'], 
+                                bins=[0, 18, 25, 35, 50, 100],
+                                labels=['teen', 'young', 'adult', 'middle', 'senior'])
+        
+        # Gender analysis
+        gender_stats = df.groupby('gender').agg({
+            'purchase_amount': ['mean', 'sum', 'count']
+        })
+        
+        # City tier analysis
+        city_stats = df.groupby('city_tier').agg({
+            'purchase_amount': ['mean', 'std', 'count']
+        })
+        
+        return {
+            'gender_stats': gender_stats,
+            'city_stats': city_stats,
+            'age_groups': df['age_group'].value_counts()
+        }
+    
+    def analyze_product_preferences(self):
+        """Product preference patterns"""
+        df = self.data.copy()
+        
+        # Category preferences by gender/age
+        category_gender = df.groupby(['gender', 'product_category']).agg({
+            'purchase_amount': ['mean', 'count']
+        })
+        
+        # Product affinity
+        high_value_categories = df[df['purchase_amount'] > df['purchase_amount'].quantile(0.75)][
+            'product_category'
+        ].value_counts()
+        
+        return {
+            'category_gender': category_gender,
+            'high_value_categories': high_value_categories
+        }
 ```
 
-## 🔧 Feature Engineering
+## 🛍️ Feature Engineering
 
 ```python
 class BlackFridayFeatureEngineer:
-    """Create predictive features"""
+    """Engineer features for prediction"""
     
-    def __init__(self):
-        self.customer_stats = None
-        self.product_stats = None
+    @staticmethod
+    def create_purchase_features(data):
+        """Purchase behavior features"""
+        df = data.copy()
+        
+        # Purchase amount statistics
+        df['log_purchase_amount'] = np.log1p(df['purchase_amount'])
+        
+        # Spending per item
+        if 'quantity' in df.columns:
+            df['price_per_item'] = df['purchase_amount'] / (df['quantity'] + 1)
+        
+        # Is high-ticket purchase
+        df['is_high_value'] = (df['purchase_amount'] > df['purchase_amount'].quantile(0.75)).astype(int)
+        
+        return df
     
-    def customer_features(self, df):
-        """Aggregate customer-level features"""
-        customer_agg = df.groupby('User_ID').agg({
-            'Purchase': ['sum', 'mean', 'count', 'std'],
-            'Product_ID': 'nunique',
-            'Product_Category_1': 'nunique'
-        }).reset_index()
+    @staticmethod
+    def create_temporal_features(data):
+        """Time-based features"""
+        df = data.copy()
         
-        customer_agg.columns = ['User_ID', 'total_purchase', 'avg_purchase', 
-                               'purchase_count', 'purchase_std',
-                               'unique_products', 'unique_categories']
+        if 'date' in df.columns:
+            df['date'] = pd.to_datetime(df['date'])
+            df['day_of_week'] = df['date'].dt.dayofweek
+            df['week_of_year'] = df['date'].dt.isocalendar().week
+            df['is_weekend'] = df['day_of_week'].isin([5, 6]).astype(int)
         
-        customer_agg['purchase_std'].fillna(0, inplace=True)
-        
-        self.customer_stats = customer_agg
-        return customer_agg
+        return df
     
-    def product_features(self, df):
-        """Aggregate product-level features"""
-        product_agg = df.groupby('Product_ID').agg({
-            'Purchase': ['mean', 'count', 'std'],
-            'User_ID': 'nunique'
-        }).reset_index()
+    @staticmethod
+    def create_customer_features(data):
+        """Aggregate customer features"""
+        df = data.copy()
         
-        product_agg.columns = ['Product_ID', 'avg_price', 'popularity',
-                              'price_std', 'unique_customers']
+        # Customer RFM
+        customer_data = df.groupby('customer_id').agg({
+            'purchase_amount': ['sum', 'mean', 'count', 'std'],
+            'product_category': 'nunique'
+        }).fillna(0)
         
-        product_agg['price_std'].fillna(0, inplace=True)
+        customer_data.columns = ['total_spending', 'avg_purchase', 'purchase_count', 
+                                 'spending_std', 'category_diversity']
         
-        self.product_stats = product_agg
-        return product_agg
+        df = df.merge(customer_data, left_on='customer_id', right_index=True)
+        
+        return df
     
-    def demographic_features(self, df):
-        """Create demographic features"""
-        df_copy = df.copy()
-        
-        # Age encoding
-        age_mapping = {'0-17': 0, '18-25': 1, '26-35': 2, '36-45': 3, 
-                      '46-50': 4, '51-55': 5, '55+': 6}
-        df_copy['Age_encoded'] = df_copy['Age'].map(age_mapping)
+    @staticmethod
+    def encode_features(data):
+        """Encode categorical variables"""
+        df = data.copy()
         
         # Gender encoding
-        df_copy['Gender_encoded'] = (df_copy['Gender'] == 'M').astype(int)
+        df['is_male'] = (df['gender'] == 'M').astype(int)
         
-        # City encoding
-        city_mapping = {'A': 0, 'B': 1, 'C': 2}
-        df_copy['City_encoded'] = df_copy['City_Category'].map(city_mapping)
+        # City tier encoding
+        city_order = {'Tier_1': 3, 'Tier_2': 2, 'Tier_3': 1}
+        df['city_tier_numeric'] = df['city_tier'].map(city_order)
         
-        return df_copy
+        # One-hot encode product category if needed
+        df = pd.get_dummies(df, columns=['product_category'], prefix='cat')
+        
+        return df
 ```
 
-## 🤖 Regression Models
+## 🧠 Prediction Models
 
 ```python
-from sklearn.linear_model import LinearRegression, Ridge, Lasso
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.svm import SVR
-from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from sklearn.linear_model import Ridge
 
-class BlackFridayRegressor:
-    """Regression models for sales prediction"""
+class SalesPredictor:
+    """Predict purchase amounts"""
     
     def __init__(self):
-        self.scaler = StandardScaler()
-        self.models = self._build_models()
+        self.models = {}
+        self.best_model = None
     
-    def _build_models(self):
-        """Initialize models"""
-        return {
-            'Linear Regression': LinearRegression(),
-            'Ridge': Ridge(alpha=10.0),
-            'Random Forest': RandomForestRegressor(n_estimators=100, max_depth=20, random_state=42),
-            'Gradient Boosting': GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, random_state=42),
-            'SVR': SVR(kernel='rbf', C=1000)
-        }
+    def ridge_regression(self, X_train, y_train):
+        """Ridge regression baseline"""
+        ridge = Ridge(alpha=1.0)
+        ridge.fit(X_train, y_train)
+        self.models['ridge'] = ridge
+        
+        return ridge
     
-    def train_all_models(self, X_train, y_train):
-        """Train all models"""
-        trained_models = {}
+    def gradient_boosting(self, X_train, y_train):
+        """Gradient Boosting for sales"""
+        gb = GradientBoostingRegressor(
+            n_estimators=100,
+            learning_rate=0.1,
+            max_depth=7,
+            min_samples_split=5,
+            subsample=0.8,
+            random_state=42
+        )
         
-        # Scale features for distance-based models
-        X_train_scaled = self.scaler.fit_transform(X_train)
+        gb.fit(X_train, y_train)
+        self.models['gb'] = gb
         
-        for name, model in self.models.items():
-            if name == 'SVR':
-                model.fit(X_train_scaled, y_train)
-            else:
-                model.fit(X_train, y_train)
-            
-            trained_models[name] = model
-        
-        return trained_models
+        return gb
     
-    def predict_batch(self, X_test, trained_models):
-        """Make predictions"""
-        predictions = {}
-        X_test_scaled = self.scaler.transform(X_test)
+    def random_forest(self, X_train, y_train):
+        """Random Forest for sales"""
+        rf = RandomForestRegressor(
+            n_estimators=100,
+            max_depth=15,
+            min_samples_split=5,
+            random_state=42,
+            n_jobs=-1
+        )
         
-        for name, model in trained_models.items():
-            if name == 'SVR':
-                pred = model.predict(X_test_scaled)
-            else:
-                pred = model.predict(X_test)
-            
-            predictions[name] = pred
+        rf.fit(X_train, y_train)
+        self.models['rf'] = rf
         
-        return predictions
+        return rf
+    
+    def predict_customer_purchase(self, customer_features):
+        """Predict purchase for customer"""
+        if self.best_model is None:
+            raise ValueError("Model not trained")
+        
+        prediction = self.best_model.predict([customer_features])[0]
+        
+        # Ensure positive prediction
+        return max(0, prediction)
+    
+    def segment_customers_by_spending(self, X, predictions):
+        """Segment by predicted spending"""
+        df = pd.DataFrame({'predicted_amount': predictions})
+        
+        df['spending_segment'] = pd.qcut(
+            df['predicted_amount'],
+            q=4,
+            labels=['low', 'medium', 'high', 'premium'],
+            duplicates='drop'
+        )
+        
+        return df
 ```
 
-## 📊 Evaluation Metrics
+## 📊 Business Insights
 
 ```python
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-
-class BlackFridayEvaluator:
-    """Evaluate model performance"""
+class CampaignOptimizer:
+    """Optimize marketing campaigns"""
     
     @staticmethod
-    def regression_metrics(y_true, y_pred):
-        """Calculate metrics"""
-        mae = mean_absolute_error(y_true, y_pred)
-        rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-        mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
-        r2 = r2_score(y_true, y_pred)
+    def customer_lifetime_value(transactions_df):
+        """Calculate CLV for each customer"""
+        clv = transactions_df.groupby('customer_id')['purchase_amount'].sum()
         
-        return {
-            'MAE': mae,
-            'RMSE': rmse,
-            'MAPE': mape,
-            'R²': r2
-        }
+        return clv
     
     @staticmethod
-    def compare_all_models(y_true, predictions_dict):
-        """Compare models"""
-        results = {}
+    def optimal_discount_strategy(price, elasticity=-1.5):
+        """Calculate optimal discount"""
+        # Price elasticity formula
+        # % change in quantity = elasticity * % change in price
         
-        for model_name, y_pred in predictions_dict.items():
-            results[model_name] = BlackFridayEvaluator.regression_metrics(y_true, y_pred)
+        optimal_discount = -1 / elasticity
         
-        results_df = pd.DataFrame(results).T.sort_values('R²', ascending=False)
-        print("\nModel Comparison:")
-        print(results_df)
-        
-        return results_df
+        return optimal_discount * 100
     
     @staticmethod
-    def feature_importance(model, feature_names):
-        """Extract feature importance"""
-        if hasattr(model, 'feature_importances_'):
-            importances = model.feature_importances_
-            importance_df = pd.DataFrame({
-                'Feature': feature_names,
-                'Importance': importances
-            }).sort_values('Importance', ascending=False)
-            
-            print("\nTop 10 Important Features:")
-            print(importance_df.head(10))
-            
-            return importance_df
+    def recommendation_priority(df, predictions):
+        """Rank customers for targeted offers"""
+        df['predicted_spending'] = predictions
+        df['priority_score'] = (
+            (df['predicted_spending'] / df['predicted_spending'].max()) * 0.5 +
+            (df['customer_lifetime_value'] / df['customer_lifetime_value'].max()) * 0.3 +
+            (df['purchase_frequency'] / df['purchase_frequency'].max()) * 0.2
+        )
+        
+        return df.sort_values('priority_score', ascending=False)
 ```
 
 ## 💡 Interview Talking Points
 
-**Q: Handle non-numeric data?**
+**Q: Price elasticity implications?**
 ```
 Answer:
-- One-hot encoding: Categorical to binary
-- Label encoding: Ordinal data
-- Target encoding: Category → mean target value
+- Elasticity = % change volume / % change price
+- Elastic: small price change → big volume change
+- Inelastic: price change ~ volume stable
+- Revenue = price × volume
+- Optimize for revenue not just volume
 ```
 
-**Q: Prevent overfitting?**
+**Q: Black Friday prediction challenges?**
 ```
 Answer:
-- Train-validation-test split
-- Cross-validation
-- Regularization (Ridge/Lasso)
-- Early stopping (Gradient Boosting)
+- One event yearly (limited training data)
+- External factors (economy, trends)
+- Customer behavior shift during sales
+- Stock limitations (inventory)
+- Competitor actions unpredictable
 ```
 
 ## 🌟 Portfolio Value
 
-✅ Customer behavior analysis
+✅ Customer segmentation
+✅ RFM analysis
 ✅ Feature engineering
-✅ Sales forecasting
-✅ Model comparison
-✅ Feature importance
-✅ E-commerce domain knowledge
+✅ Regression modeling
+✅ Business metrics
+✅ Campaign optimization
+✅ Actionable insights
 
 ---
 
-**Technologies**: Scikit-learn, Pandas, NumPy, Matplotlib
+**Technologies**: Scikit-learn, Pandas, NumPy
 
